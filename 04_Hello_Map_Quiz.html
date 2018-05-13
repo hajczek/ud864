@@ -8,24 +8,118 @@ API Course, Lesson 1 -->
  <!-- styles put here, but you can include a CSS file and reference it instead! -->
    <style type="text/css">
      html, body { height: 100%; margin: 0; padding: 0; }
-     #map { height: 100%; }
+     #map {
+        bottom: 0px;
+        height: 100%;
+        left: 362px;
+        position: absolute;
+        right: 0px;
+      }
+      .options-box {
+        background: #fff;
+        border: 1px solid #999;
+        border-radius: 3px;
+        height: 100%;
+        line-height: 35px;
+        padding: 10px 10px 30px 10px;
+        text-align: left;
+        width: 340px;
+      }
    </style>
  </head>
  <body>
-   <!-- TODO 1: Create a place to put the map in the HTML-->
-   <div id="map"></div>
+ 
+    <div class="container">
+      <div class="options-box">
+        <h1>See theaters in Warsaw</h1>
+          <div>
+            <input id="show-listings" type="button" value="Show Listings">
+            <input id="hide-listings" type="button" value="Hide Listings">
+          </div>
+      </div>
+      <!-- TODO 1: Create a place to put the map in the HTML-->
+      <div id="map"></div>
+    </div>
    <script>
-     // TODO: Create a map variable
     let map;
-     // TODO: Complete the following function to initialize the map
-     function initMap() {
-       // TODO: use a constructor to create a new map JS object. You can use the coordinates
-       // we used, 40.7413549, -73.99802439999996 or your own!
+
+    // Create a new blank array for all the listing markers.
+    let markers = [];
+
+    // TODO: Complete the following function to initialize the map
+    function initMap() {
+      // TODO: use a constructor to create a new map JS object. You can use the coordinates
+      // we used, 40.7413549, -73.99802439999996 or your own!
       map = new google.maps.Map(document.getElementById('map'), {
-        center: {lat: 40.7413549, lng: -73.99802439999996},
+        center: {lat: 52.229676, lng: 21.012229},
         zoom: 13
-      })
-     }
+      });
+      
+      let locations = [
+        {title: 'Teatr Wielki Opera Narodowa', location: {lat:52.243532, lng:21.010664}},
+        {title: 'Teatr Capitol', location: {lat:52.241206, lng:21.003091}},
+        {title: 'Teatr Kamienica', location: {lat:52.243253, lng: 20.998499}},
+        {title: 'Teatr Kwadrat', location: {lat:52.235864, lng:21.008624}},
+        {title: 'Teatr Syrena', location: {lat:52.216516, lng:21.022126}},
+        {title: 'Och-Teatr', location: {lat:52.214206, lng:20.980168}}
+      ];
+
+      let largeInfowindow = new google.maps.InfoWindow();
+   
+      for(let i=0; i<locations.length; i++) {
+        let position = locations[i].location;
+        let title = locations[i].title;
+
+        let marker = new google.maps.Marker({
+          position: position,
+          title: title,
+          animation: google.maps.Animation.DROP,
+          id: i
+        });
+        
+        // Push the marker to our array for markers.
+        markers.push(marker);
+        // Create an onClick event to open an infowindow at each marker.
+        marker.addListener('click', function() {
+          populateInfoWindow(this, largeInfowindow);
+        });
+      }
+
+      document.getElementById('show-listings').addEventListener('click', showListings);
+      document.getElementById('hide-listings').addEventListener('click', hideListings);
+    }
+      // This function populates the infowindow when the marker is clicked.
+      // We'll only allow one infowindow which will open at the marker that is clicked,
+      //and populate based on that markers position.
+      function populateInfoWindow(marker, infowindow){
+        if(infowindow.marker != marker) {
+          infowindow.marker = marker;
+          infowindow.setContent('<div>' + marker.title + '</div>');
+          infowindow.open(map, marker);
+          // Make sure the marker property is cleared if the infowidow is closed.
+          infowindow.addListener('closeclick', function() {
+            infowindow.setMarker = null;
+          });
+        }
+      }
+      
+      // This function will loop trough the markers array and display them all.
+      function showListings() {
+        let bounds = new google.maps.LatLngBounds();
+        for (let i=0; i<markers.length; i++) {
+          markers[i].setMap(map);
+          bounds.extend(markers[i].position);
+        }
+        map.fitBounds(bounds);
+      }
+      
+      // This function will loop through the listings and hide them all. 
+      function hideListings() {
+        for (let i=0; i<markers.length; i++) {
+          markers[i].setMap(null);
+        }
+      }
+     
    </script>
    <!--TODO: Load the JS API ASYNCHRONOUSLY below.-->
    <script async defer 
