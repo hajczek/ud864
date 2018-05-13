@@ -25,6 +25,15 @@ API Course, Lesson 1 -->
         text-align: left;
         width: 340px;
       }
+      #pano {
+        width: 200px;
+        height: 200px;
+      }
+      #toggle-drawing {
+        width: 30%;
+        position: relative;
+        margin-left: 10px;
+      }
    </style>
  </head>
  <body>
@@ -36,7 +45,10 @@ API Course, Lesson 1 -->
             <input id="show-listings" type="button" value="Show Listings">
             <input id="hide-listings" type="button" value="Hide Listings">
           </div>
-      </div>
+          <hr>
+            <span class="text">Draw a shape to search within it for homes!</span>
+            <input id="toggle-drawing" type="button" value="Drawing Tools">
+      </div>      
       <!-- TODO 1: Create a place to put the map in the HTML-->
       <div id="map"></div>
     </div>
@@ -46,13 +58,118 @@ API Course, Lesson 1 -->
     // Create a new blank array for all the listing markers.
     let markers = [];
 
+    // This global polygon variable is to ensure only ONE polygon is render.
+    var polygon = null;
+
     // TODO: Complete the following function to initialize the map
     function initMap() {
+      let styles = [
+      {
+          elementType: 'geometry', 
+          stylers: [{color: '#fff5cb'}]
+        },
+        {
+          elementType: 'labels.text.fill', 
+          stylers: [{color: '#523735'}]
+        },        
+        {
+          elementType: 'labels.text.stroke', 
+          stylers: [{color: '#ffffff'}, {weight: 3}]
+        },
+        {
+        featureType: 'administrative',
+          elementType: 'geometry.stroke',
+          stylers: [{color: '#ffffff'}]
+        },
+        {
+          featureType: 'administrative.land_parcel',
+          elementType: 'geometry.stroke',
+          stylers: [{color: '#dcd2be'}]
+        },
+        {
+          featureType: 'administrative.land_parcel',
+          elementType: 'labels.text.fill',
+          stylers: [{color: '#ae9e90'}]
+        },
+        {
+          featureType: 'landscape.natural',
+          elementType: 'geometry',
+          stylers: [{color: '#dfd2ae'}]
+        },
+        {
+          featureType: 'poi',
+          elementType: 'geometry',
+          stylers: [{color: '#e6e1aa'}]
+        },
+        {
+          featureType: 'poi',
+          elementType: 'labels.text.fill',
+          stylers: [{color: '#333333'}]
+          },
+        {
+          featureType: 'poi.park',
+          elementType: 'geometry.fill',
+          stylers: [{color: '#bed097'}]
+        },
+        {
+          featureType: 'poi.park',
+          elementType: 'labels.text.fill',
+          stylers: [{color: '#3a5107'}]
+        },
+        {
+          featureType: 'road',
+          elementType: 'geometry',
+          stylers: [{color: '#ffffff'}]
+        },
+        {
+          featureType: 'road.arterial',
+          elementType: 'geometry',
+          stylers: [{color: '#dddddd'}]
+        },
+        {
+          featureType: 'road.highway',
+          elementType: 'geometry',
+          stylers: [{color: '#bbbbbb'}]
+          },
+        {
+          featureType: 'road.highway',
+          elementType: 'geometry.stroke',
+          stylers: [{color: '#888888'}]
+        },
+        {
+          featureType: 'road.local',
+          elementType: 'labels.text.fill',
+          stylers: [{color: '#444444'}]
+        },
+        {
+          featureType: 'transit.line',
+          elementType: 'geometry',
+          stylers: [{color: '#977b68'}]
+        },
+        {
+          featureType: 'transit.station',
+          elementType: 'geometry',
+          stylers: [{color: '#777777'}]
+        },
+        {
+          featureType: 'water',
+          elementType: 'geometry.fill',
+          stylers: [{color: '#0A9091'}]
+        },
+        {
+          featureType: 'water',
+          elementType: 'labels.text.fill',
+          stylers: [{color: '#ffffff'}]
+        }
+      ];
+
       // TODO: use a constructor to create a new map JS object. You can use the coordinates
       // we used, 40.7413549, -73.99802439999996 or your own!
       map = new google.maps.Map(document.getElementById('map'), {
         center: {lat: 52.229676, lng: 21.012229},
-        zoom: 13
+        zoom: 13,
+        styles: styles,
+        mapTypeControl: false
       });
       
       let locations = [
@@ -65,7 +182,25 @@ API Course, Lesson 1 -->
       ];
 
       let largeInfowindow = new google.maps.InfoWindow();
-   
+
+      // Initialize the drawing manager.
+      let drawingManager = new google.maps.drawing.DrawingManager({
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+        drawingControl: true,
+        drawingControlOptions: {
+          position: google.maps.ControlPosition.TOP_LEFT,
+          drawingModes: [
+            google.maps.drawing.OverlayType.POLYGON
+          ]
+        }
+      })
+
+      // Style the markers a bit. This will be our listing marker icon.
+      let defaultIcon = makeMarkerIcon('0A9292');
+
+      // Create A "highlighted location" marker color for when the user mouses over the marker.
+      let highlightedIcon = makeMarkerIcon('10DEDE');
+
       for(let i=0; i<locations.length; i++) {
         let position = locations[i].location;
         let title = locations[i].title;
@@ -73,6 +208,7 @@ API Course, Lesson 1 -->
         let marker = new google.maps.Marker({
           position: position,
           title: title,
+          icon: defaultIcon,
           animation: google.maps.Animation.DROP,
           id: i
         });
@@ -83,10 +219,39 @@ API Course, Lesson 1 -->
         marker.addListener('click', function() {
           populateInfoWindow(this, largeInfowindow);
         });
-      }
+      }      
 
       document.getElementById('show-listings').addEventListener('click', showListings);
       document.getElementById('hide-listings').addEventListener('click', hideListings);
+
+      document.getElementById('toggle-drawing').addEventListener('click', function () {
+        toggleDrawing(drawingManager);
+      });
+
+      // Add an event listener so that the polygon is captured, call the searchWithinPolygon function.
+      // This will show the markers in the polygon, and hide any outside of it.
+      drawingManager.addListener('overlaycomplete', function(event) {
+        // First, check if there is an existing polygon.
+        // If there is, get rid of it and remove the markers.
+        if(polygon) {
+          polygon.setMap(null);
+          hideListings();
+        }
+        // Switching the drawing mode to the HAND (i.e., no longer drawing).
+        drawingManager.setDrawingMode(null);
+        // Creating a new editable polygon from the overlay
+        polygon = event.overlay;
+        polygon.setEditable(true);
+        //Searching within the polygon.
+        searchWithinPolygon();
+        //Make sure the search is re-done if the poly is changed.
+        polygon.getPath().addListener('set-at', searchWithinPolygon);
+        polygon.getPath().addListener('insert-at', searchWithinPolygon);
+
+        let area = google.maps.geometry.spherical.computeArea(polygon.getPath());
+        window.alert(area+" SQUARE METERS");
+      })
+
     }
       // This function populates the infowindow when the marker is clicked.
       // We'll only allow one infowindow which will open at the marker that is clicked,
@@ -98,8 +263,35 @@ API Course, Lesson 1 -->
           infowindow.open(map, marker);
           // Make sure the marker property is cleared if the infowidow is closed.
           infowindow.addListener('closeclick', function() {
-            infowindow.setMarker = null;
+            infowindow.marker = null;
           });
+          let streetViewService = new google.maps.StreetViewService();
+          let radius = 50;
+          // In case the status is OK, which means tha pano was found, compute the position of the treetview image,
+          // then calculate the heading, then get a panorama from that and set the options
+          function getStreetView(data, status) {
+            if(status == google.maps.StreetViewStatus.OK) {
+              let nearStreetViewLocation = data.location.latLng;
+              let heading = google.maps.geometry.spherical.computeHeading(
+                nearStreetViewLocation, marker.position);
+                infowindow.setContent('<div' + marker.title + '</div><div id="pano"></div>');
+                let panoramaOptions = {
+                  position: nearStreetViewLocation,
+                  pov: {
+                    heading: heading,
+                    pitch: 30
+                  }
+                };
+              let panorama = new google.maps.StreetViewPanorama(
+                document.getElementById('pano'), panoramaOptions);
+            } else {
+              infowindow.setContent('<div>' + marker.title + '</div>' + '<div>No Street View Found</div>');
+            }
+          }
+          // Use streetview service to get the closets streetview image within 50 meters of the markers position
+          streetViewService.getPanoramaByLocation(marker.position, radius, getStreetView);
+          // Open the infowindow on the correct marker.
+          infowindow.open(map, marker);
         }
       }
       
@@ -119,11 +311,48 @@ API Course, Lesson 1 -->
           markers[i].setMap(null);
         }
       }
+
+      // This function takes in a COLOR< and then creates a new marker icon of that color. The icon will be 21 px wide by 34 high,
+      // have an origin of 0, 0 and be anchored at 10, 34.
+      function makeMarkerIcon(markerColor) {
+        var markerImage = new google.maps.MarkerImage(
+          'icons/icon.png',
+          new google.maps.Size(32, 32),
+          new google.maps.Point(0, 0),
+          new google.maps.Point(10, 34),
+          new google.maps.Size(32, 32));
+        return markerImage;
+      }
      
+     // This shows and hides (respectively) the drawing options.
+      function toggleDrawing(drawingManager) {
+        if(drawingManager.map) {
+          drawingManager.setMap(null);
+          // In case the user drew anything, get rid of the polygon
+          if(polygon){
+            polygon.setMap(null);
+          }
+        } else {
+          drawingManager.setMap(map);
+        }
+      }
+
+      // This function hides all markers outside the polygon, and shows only the onse within it.
+      // THis is so that the user can specify an exact area of search.
+      function searchWithinPolygon() {
+        for(let i=0; i<markers.length; i++) {
+          if (google.maps.geometry.poly.containsLocation(markers[i].position, polygon)) {
+            markers[i].setMap(map);
+          }else{
+            markers[i].setMap(null);
+          }
+        }
+      }
+
    </script>
    <!--TODO: Load the JS API ASYNCHRONOUSLY below.-->
    <script async defer 
-   src="http://maps.googleapis.com/maps/api/js?key=AIzaSyBqtLvddq3jzZ_Lnu9M8266EMVBfXtlUT4&v=3&callback=initMap">
+   src="http://maps.googleapis.com/maps/api/js?libraries=drawing,geometry&key=AIzaSyBqtLvddq3jzZ_Lnu9M8266EMVBfXtlUT4&v=3&callback=initMap">
    </script>>
    </script>
  </body>
