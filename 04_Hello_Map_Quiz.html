@@ -85,6 +85,12 @@ API Course, Lesson 1 -->
             <input id="search-within-time-text" type="text" placeholder="Ex: Google Office NYC or 75 9th">
             <input id="search-within-time" type="button" value="GO">
           </div>
+          <hr>
+          <div>
+            <span class="text">Search for nearby places</span>
+              <input id="places-search" type="text" placeholder="Ex: Theater in Warsaw">
+              <input id="go-places" type="button" value="GO">
+          </div>
       </div>      
       <!-- TODO 1: Create a place to put the map in the HTML-->
       <div id="map"></div>
@@ -96,7 +102,10 @@ API Course, Lesson 1 -->
     let markers = [];
 
     // This global polygon variable is to ensure only ONE polygon is render.
-    var polygon = null;
+    let polygon = null;
+
+    // Create a placemarkers array to use in multiple functions to have control over the number of places that show.
+    let placeMarkers = [];
 
     // TODO: Complete the following function to initialize the map
     function initMap() {
@@ -208,6 +217,20 @@ API Course, Lesson 1 -->
         styles: styles,
         mapTypeControl: false
       });
+
+      // This autocomplete is for use in the searcg within time entry box.
+      let timeAutocomplete = new google.maps.places.Autocomplete(
+        document.getElementById('search-within-time-text'));
+      // This autocomplete is for use in the geocoder entry box.
+      let zoomAutocomplete = new google.maps.places.Autocomplete(
+        document.getElementById('zoom-to-area-text'));
+      // Bias the boundaries within the map for the zoom to area text.
+      zoomAutocomplete.bindTo('bounds', map);
+      // Create a searchbox in order to execute a places search
+      let searchBox = new google.maps.places.SearchBox(
+        document.getElementById('places-search'));
+      // Bias the searchbox to within the bounds of the map.
+      searchBox.setBounds(map.getBounds());
       
       let locations = [
         {title: 'Teatr Wielki Opera Narodowa', location: {lat:52.243532, lng:21.010664}},
@@ -259,7 +282,9 @@ API Course, Lesson 1 -->
       }      
 
       document.getElementById('show-listings').addEventListener('click', showListings);
-      document.getElementById('hide-listings').addEventListener('click', hideListings);
+      document.getElementById('hide-listings').addEventListener('click', function() {
+        hideMarkers(markers);
+      });
 
       document.getElementById('toggle-drawing').addEventListener('click', function () {
         toggleDrawing(drawingManager);
@@ -272,6 +297,14 @@ API Course, Lesson 1 -->
       document.getElementById('search-within-time').addEventListener('click', function () {
         searchWithinTime();
       });
+
+      // Listen for the event fired when the user selects a prediction from the picklist and retrieve more details for that place.
+      searchBox.addListener('places_changed', function() {
+        searchBoxPlaces(this);
+      });
+
+      // Listen for the event fired when the user selects a prediction and clicks "go" more details for that place.
+      document.getElementById('go-places').addEventListener('click', textSearchPlaces);
 
       // Add an event listener so that the polygon is captured, call the searchWithinPolygon function.
       // This will show the markers in the polygon, and hide any outside of it.
@@ -351,7 +384,7 @@ API Course, Lesson 1 -->
       }
       
       // This function will loop through the listings and hide them all. 
-      function hideListings() {
+      function hideMarkers(markers) {
         for (let i=0; i<markers.length; i++) {
           markers[i].setMap(null);
         }
@@ -532,10 +565,123 @@ API Course, Lesson 1 -->
           });
         }
 
+        // Thus function fires when the user selects a searchbox picklist item. It will do a nearby search using
+        // the selected query string or place.
+        function searchBoxPlaces(searchBox) {
+          hideMarkers(placeMarkers);
+          let places = searchBox.getPlaces();
+          // For each place, get the icon, name and location
+          createMarkersForPlaces(places);
+          if(places.length == 0) {
+            window.alert('We did not find any places matching that search!');
+          }
+        }
+
+        // This function firest when the user select "go" on the places search. 
+        // it will do a nearby search usoing the entered query string or place.
+        function textSearchPlaces() {
+          let bounds = map.getBounds();
+          hideMarkers(placeMarkers);
+          let placesService = new google.maps.places.PlacesService(map);
+          placesService.textSearch({
+            query: document.getElementById('places-search').value,
+            bounds: bounds
+          }, function(results, status) {
+            if(status === google.maps.places.PlacesServiceStatus.OK) {
+              createMarkersForPlaces(results);
+            }
+          });
+        }
+
+        // This function creates markets for each place found in either places search.
+        function createMarkersForPlaces(places) {
+          let bounds = new google.maps.LatLngBounds();
+          for (let i=0; i<places.length; i++) {
+            let place = places[i];
+            let icon = {
+              url: place.icon,
+              size: new google.maps.Size(35, 35),
+              origin: new google.maps.Point(0, 0),
+              anchor: new google.maps.Point(15, 34),
+              scaledSize: new google.maps.Size(25, 25)
+            };
+            // Create a marker for each place.
+            let marker = new google.maps.Marker({
+              map: map,
+              icon: icon,
+              title: place.name,
+              position: place.geometry.location,
+              id: place.place_id
+            });
+            // Create a singke infowindow to be used with the place details information so that only one is open at once.
+            let placeInfoWindow = new google.maps.InfoWindow();
+            // If a marker is clicked, do a place details search on it in the next function.
+            marker.addListener('click', function() {
+              if(placeInfoWindow.marker == this) {
+                console.log("This infowindow already is on this marker!");
+              } else {
+                getPlacesDetails(this, placeInfoWindow);
+              }
+            });
+            placeMarkers.push(marker);
+            if(place.geometry.viewport) {
+              // Only geocodes have viewport.
+              bounds.union(place.geometry.viewport);
+            } else {
+              bounds.extend(place.geometry.location);
+            }
+          }
+          map.fitBounds(bounds);
+        }
+
+        // This is the PLACE DETAILS search - it's the most detailed so it's only executed when a marker is selected,
+        // indicating the user wants more details about the place.
+        function getPlacesDetails(marker, infowindow) {
+          let service = new google.maps.places.PlacesService(map);
+          service.getDetails({
+            placeId: marker.id
+          }, function(place, status) {
+            if(status === google.maps.places.PlacesServiceStatus.OK) {
+            // Set the marker property on this infowindow so it isn't created again.
+            infowindow.marker = marker;
+            let innerHTML = '<div>';
+            if(place.name) {
+              innerHTML += '<strong>' + place.name + '</strong>';
+            }
+            if(place.formatted_address) {
+              innerHTML += '<br>' + place.formatted_address;
+            }
+            if(place.formatted_phone_number) {
+              innerHTML += '<br>' + place.formatted_phone_number;
+            }
+            if(place.opening_hours) {
+              innerHTML += '<br><br><strong>Hours:</strong><br>' +
+              place.opening_hours.weekday_text[0] + '<br>' +
+              place.opening_hours.weekday_text[1] + '<br>' +
+              place.opening_hours.weekday_text[2] + '<br>' +
+              place.opening_hours.weekday_text[3] + '<br>' +
+              place.opening_hours.weekday_text[4] + '<br>' +
+              place.opening_hours.weekday_text[5] + '<br>' +
+              place.opening_hours.weekday_text[6];
+            }
+            if(place.photos) {
+              innerHTML += '<br><br><img src="' + place.photos[0].getUrl(
+                {maxHeight: 100, maxWidth: 200}) + '">';
+            }
+            innerHTML += '</div>';
+            infowindow.setContent(innerHTML);
+            infowindow.open(map, marker);
+            // Make sure the marker is cleared if the infowindow is closed.
+            infowindow.addListener('closeclick', function() {
+              infowindow.marker = null;
+            });
+          }
+          });
+        }
    </script>
    <!--TODO: Load the JS API ASYNCHRONOUSLY below.-->
    <script async defer 
-   src="http://maps.googleapis.com/maps/api/js?libraries=drawing,geometry&key=AIzaSyBqtLvddq3jzZ_Lnu9M8266EMVBfXtlUT4&v=3&callback=initMap">
+   src="http://maps.googleapis.com/maps/api/js?libraries=places,drawing,geometry&key=AIzaSyBqtLvddq3jzZ_Lnu9M8266EMVBfXtlUT4&v=3&callback=initMap">
    </script>>
    </script>
  </body>
