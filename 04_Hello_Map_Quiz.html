@@ -41,6 +41,12 @@ API Course, Lesson 1 -->
       #zoom-to-area {
         width: 24%;
       }
+      #search-within-time-text {
+        width: 84%;
+      }
+      .text {
+        font-size: 12px;
+      }
    </style>
  </head>
  <body>
@@ -56,9 +62,28 @@ API Course, Lesson 1 -->
             <span class="text">Draw a shape to search within it for homes!</span>
             <input id="toggle-drawing" type="button" value="Drawing Tools">
           <hr>
-          <div></div>
+          <div>
             <input id="zoom-to-area-text" type="text" placeholder="Enter your favorite area!">
             <input id="zoom-to-area" type="button" value="Zoom">
+          </div>
+          <hr>
+          <div>
+            <span class="text">Within</span>
+            <select id="max-duration">
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hour</option>
+            </select>
+            <select id="mode">
+              <option value="DRIVING">drive</option>
+              <option value="WALKING">walk</option>
+              <option value="BICYCLING">bike</option>
+              <option value="TRANSIT">transit ride</option>
+            </select>
+            <span class="text">of</span>
+            <input id="search-within-time-text" type="text" placeholder="Ex: Google Office NYC or 75 9th">
+            <input id="search-within-time" type="button" value="GO">
           </div>
       </div>      
       <!-- TODO 1: Create a place to put the map in the HTML-->
@@ -244,6 +269,10 @@ API Course, Lesson 1 -->
         zoomToArea();
       });
 
+      document.getElementById('search-within-time').addEventListener('click', function () {
+        searchWithinTime();
+      });
+
       // Add an event listener so that the polygon is captured, call the searchWithinPolygon function.
       // This will show the markers in the polygon, and hide any outside of it.
       drawingManager.addListener('overlaycomplete', function(event) {
@@ -392,6 +421,116 @@ API Course, Lesson 1 -->
           }
         }
 
+        // This function allows the user to input a desired travel time, in minutes, and travel mode, and a location -
+        // and only show the listings that are within that travel time (via that travel mode) of the location 
+        function searchWithinTime(){
+          // Initialize the distance matrix service.
+          let distanceMatrixService  = new google.maps.DistanceMatrixService;
+          let address = document.getElementById('search-within-time-text').value;
+          // Check to maake sure the place enteres isn't blank
+          if(address == '') {
+            window.alert('You must enter an address.');
+          } else {
+            hideListings();
+            // Use the distance matrix service to calculate the duration of the routes between all our markers, 
+            // and the destination address entered by the user. Then put all the origins into an origin matrix.
+            let origins = [];
+            for (let i=0; i<markers.length; i++) {
+              origins[i] = markers[i].position;
+            }
+            let destination = address;
+            let mode = document.getElementById('mode').value;
+            // Now that both the origins and destination are defined, get all the info for the distance between them.
+            distanceMatrixService.getDistanceMatrix({
+              origins: origins,
+              destinations: [destination],
+              travelMode: google.maps.TravelMode[mode],
+              unitSystem: google.maps.UnitSystem.IMPERIAL,
+            }, function(response, status) {
+              if(status !== google.maps.DistanceMatrixStatus.OK) {
+                window.alert('Error was: ' + status);
+            } else {
+                displayMarkersWithinTime(response);
+            }
+            });
+          }
+        }
+
+        // This function will go through each of the results, and, if the distance is LESS than the value in the picker,
+        // show it on the map.
+        function displayMarkersWithinTime(response) {
+          let maxDuration = document.getElementById('max-duration').value;
+          let origins = response.originAddresses;
+          let destinations = response.destinationAddresses;
+          // Parse through the results, and get the distance and duration of each. Beacuse there might be multiple origins
+          // and destinations we have a nested loop. Then, make sure at least 1 result was found.
+          let atLeastOne = false;
+          for(let i=0; i<origins.length; i++) {
+            let results = response.rows[i].elements;
+            for(let j=0; j<results.length; j++) {
+              let element = results[j];
+              if(element.status === "OK") {
+                // The distance is returned in feet, but the TEXT is in miles. If we wanted to switch the function to show
+                // markers within a user-entered DISTANCE, we would need the value for distance, but for now we only need the text.
+                let distanceText = element.distance.text;
+                // Duration value is given in seconds so we make it MINUTES. We need both the value and the text.
+                let duration = element.duration.value / 60;
+                let durationText = element.duration.text;
+                if(duration <= maxDuration) {
+                  // the origin [i] should = the markers[i]
+                  markers[i].setMap(map);
+                  atLeastOne = true;
+                  // Create a mini infowindow to open immediately and contain the dostance and duration
+                  let infowindow = new google.maps.InfoWindow({
+                    content: durationText + 'away, ' + distanceText + 
+                    '<div><input type=\"button\" value=\"View Route\" onclick=' + 
+                    '\"displayDirections(&quot;' + origins[i] + '&quot;);\"></input></div>'
+                  });
+                  infowindow.open(map, markers[i]);
+                  // Put this in so that small window closes if thee user clicks the marker, when the bog infowindow opens
+                  markers[i].infowindow = infowindow;
+                  google.maps.event.addListener(markers[i], 'click', function() {
+                    this.infowindow.close();
+                  });
+                }
+              }
+            }
+          }
+          if(!atLeastOne){
+            window.alert('We could not find any locations within that distance!')
+          }
+        }
+
+        // This function is in response to the user selecting "show route" on one of the markers within the calculated 
+        // distance. This will display the route on the map.
+        function displayDirections(origin) {
+          hideListings();
+          let directionsService = new google.maps.DirectionsService;
+          // Get the destination address from the user entered value.
+          let destinationAddress = document.getElementById('search-within-time-text').value;
+          // Get mode again from the user entered value
+          let mode = document.getElementById('mode').value;
+          directionsService.route({
+            // The origin is the passed in marker's position.
+            origin: origin,
+            // The destination is user entered address
+            destination: destinationAddress,
+            travelMode: google.maps.TravelMode[mode]
+          }, function(response, status) {
+            if(status === google.maps.DirectionsStatus.OK) {
+              let directionsDisplay = new google.maps.DirectionsRenderer({
+                map: map,
+                directions: response,
+                draggable: true,
+                polylineOptions: {
+                  strokeColor: 'green'
+                }
+              });
+            } else {
+              window.alert('Directions request filed due to ' + status);
+            }
+          });
+        }
 
    </script>
    <!--TODO: Load the JS API ASYNCHRONOUSLY below.-->
